@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
+import Import from './Import'
 
 export default function App() {
   const [session, setSession] = useState(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [view, setView] = useState('library')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
@@ -19,13 +22,19 @@ export default function App() {
   useEffect(() => {
     if (!session) return
     supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', session.user.id)
+      .single()
+      .then(({ data }) => setIsAdmin(data?.role === 'admin'))
+    supabase
       .from('books')
       .select('*', { count: 'exact', head: true })
       .then(({ count, error }) => {
         if (error) setMessage(error.message)
         else setBookCount(count)
       })
-  }, [session])
+  }, [session, view])
 
   async function signIn(e) {
     e.preventDefault()
@@ -58,12 +67,21 @@ export default function App() {
   }
 
   return (
-    <div style={{ maxWidth: 480, margin: '4rem auto', padding: '0 1rem' }}>
+    <div style={{ maxWidth: 760, margin: '2rem auto', padding: '0 1rem' }}>
       <h1>Our Library</h1>
-      <p>Signed in as {session.user.email}</p>
-      <p>Books in the library: {bookCount ?? '...'}</p>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 16 }}>
+        <button onClick={() => setView('library')}>Library</button>
+        {isAdmin && <button onClick={() => setView('import')}>Import</button>}
+        <button onClick={() => supabase.auth.signOut()}>Sign out</button>
+      </div>
+      <p style={{ textAlign: 'center' }}>Signed in as {session.user.email}</p>
       {message && <p style={{ color: 'tomato' }}>{message}</p>}
-      <button onClick={() => supabase.auth.signOut()}>Sign out</button>
+      {view === 'library' && (
+        <p style={{ textAlign: 'center' }}>
+          Books in the library: {bookCount ?? '...'}
+        </p>
+      )}
+      {view === 'import' && isAdmin && <Import />}
     </div>
   )
 }
