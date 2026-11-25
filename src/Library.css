@@ -40,8 +40,9 @@ html body #root {
   background: #2a2a35;
   transition: transform 0.15s;
 }
-.book-card:hover .book-cover,
-.book-card:focus-visible .book-cover { transform: translateY(-4px); }
+.cover-wrap { position: relative; transition: transform 0.15s; }
+.book-card:hover .cover-wrap,
+.book-card:focus-visible .cover-wrap { transform: translateY(-4px); }
 .book-cover-fallback {
   display: flex;
   align-items: center;
@@ -105,3 +106,59 @@ html body #root {
   .modal { flex-direction: column; }
   .modal-cover { width: 140px; }
 }
+.clear-filters { padding: 8px 12px; cursor: pointer; }
+
+.badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.75);
+}
+.badge-read { background: #2e7d32; }
+.badge-reading { background: #b26a00; }
+
+.my-shelf {
+  margin: 14px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+.shelf-label { font-size: 13px; opacity: 0.7; margin-bottom: 6px; }
+.segmented {
+  display: inline-flex;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.segmented button {
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: inherit;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.segmented button.active { background: #7c5cff; }
+.stars { display: flex; gap: 2px; }
+.star {
+  background: none;
+  border: none;
+  font-size: 26px;
+  line-height: 1;
+  padding: 0 2px;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+}
+.star.on { color: #ffc107; }
+
+.chip-button {
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+.chip-button:hover { background: rgba(255, 255, 255, 0.22); }

@@ -67,7 +67,7 @@ export default function App() {
         {isAdmin && <button onClick={() => setView('import')}>Import</button>}
         <button onClick={() => supabase.auth.signOut()}>Sign out</button>
       </div>
-      {view === 'library' && <Library />}
+      {view === 'library' && <Library userId={session.user.id} />}
       {view === 'import' && isAdmin && <Import />}
     </div>
   )
