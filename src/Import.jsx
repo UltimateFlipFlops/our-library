@@ -54,13 +54,18 @@ async function fetchJson(url, tries = 3) {
 }
 
 function cleanDescription(d) {
-  if (!d) return null
-  let text = typeof d === 'string' ? d : d.value
-  if (!text) return null
-  text = text.split(/\r?\n-{5,}/)[0]
-  text = text.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim()
-  return text.slice(0, 2000) || null
-}
+    if (!d) return null
+    let text = typeof d === 'string' ? d : d.value
+    if (!text) return null
+    text = text.split(/\r?\n-{5,}/)[0]
+    text = text.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim()
+    if (text.length > 3000) {
+      const cut = text.slice(0, 3000)
+      const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '))
+      text = end > 1000 ? cut.slice(0, end + 1) : cut + '…'
+    }
+    return text || null
+  }
 
 async function lookupBook(rawTitle, author) {
   const searchTitle = rawTitle.replace(/\s*\(.*?\)\s*/g, ' ').trim()

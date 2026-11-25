@@ -157,3 +157,4 @@ grant select, insert, update, delete on public.lists to authenticated;
 grant select, insert, update, delete on public.list_items to authenticated;
 grant select, insert, delete on public.checkouts to authenticated;
 grant update (returned_at, due_date) on public.checkouts to authenticated;
+alter table public.books add column ol_work_key text unique;

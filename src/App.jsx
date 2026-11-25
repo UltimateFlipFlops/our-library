@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
+import Library from './Library'
 import Import from './Import'
 
 export default function App() {
@@ -9,7 +10,6 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
-  const [bookCount, setBookCount] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -27,14 +27,7 @@ export default function App() {
       .eq('id', session.user.id)
       .single()
       .then(({ data }) => setIsAdmin(data?.role === 'admin'))
-    supabase
-      .from('books')
-      .select('*', { count: 'exact', head: true })
-      .then(({ count, error }) => {
-        if (error) setMessage(error.message)
-        else setBookCount(count)
-      })
-  }, [session, view])
+  }, [session])
 
   async function signIn(e) {
     e.preventDefault()
@@ -67,20 +60,14 @@ export default function App() {
   }
 
   return (
-    <div style={{ maxWidth: 760, margin: '2rem auto', padding: '0 1rem' }}>
+    <div style={{ width: '100%', maxWidth: 1600, margin: '2rem auto', padding: '0 1rem', boxSizing: 'border-box' }}>
       <h1>Our Library</h1>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 16 }}>
         <button onClick={() => setView('library')}>Library</button>
         {isAdmin && <button onClick={() => setView('import')}>Import</button>}
         <button onClick={() => supabase.auth.signOut()}>Sign out</button>
       </div>
-      <p style={{ textAlign: 'center' }}>Signed in as {session.user.email}</p>
-      {message && <p style={{ color: 'tomato' }}>{message}</p>}
-      {view === 'library' && (
-        <p style={{ textAlign: 'center' }}>
-          Books in the library: {bookCount ?? '...'}
-        </p>
-      )}
+      {view === 'library' && <Library />}
       {view === 'import' && isAdmin && <Import />}
     </div>
   )
