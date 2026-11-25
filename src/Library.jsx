@@ -83,7 +83,7 @@ function hueFor(text) {
   return h
 }
 
-function Cover({ book, className = '' }) {
+export function Cover({ book, className = '' }) {
   const [failed, setFailed] = useState(false)
   if (book.cover_url && !failed) {
     return (
@@ -425,7 +425,7 @@ function BookDetails({
   )
 }
 
-export default function Library({ userId, isAdmin }) {
+export default function Library({ userId, isAdmin, openBookId }) {
   const [books, setBooks] = useState([])
   const [myBooks, setMyBooks] = useState(new Map())
   const [lists, setLists] = useState([])
@@ -456,6 +456,7 @@ export default function Library({ userId, isAdmin }) {
     ])
       .then(([b, mine, ls, items, outs, profs]) => {
         setBooks(b)
+        if (openBookId) setSelected(b.find((x) => x.id === openBookId) || null)
         setMyBooks(new Map(mine.map((r) => [r.book_id, r])))
         setLists(ls)
         const map = new Map(ls.map((l) => [l.id, new Set()]))

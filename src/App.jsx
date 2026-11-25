@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 import Library from './Library'
-import Import from './Import'
+import Recommended from './Recommended'
 import Checkouts from './Checkouts'
+import Import from './Import'
 
 export default function App() {
   const [session, setSession] = useState(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [view, setView] = useState('library')
+  const [openBookId, setOpenBookId] = useState(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
@@ -34,6 +36,16 @@ export default function App() {
     e.preventDefault()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     setMessage(error ? error.message : '')
+  }
+
+  function go(next) {
+    setOpenBookId(null)
+    setView(next)
+  }
+
+  function openBook(id) {
+    setOpenBookId(id)
+    setView('library')
   }
 
   if (!session) {
@@ -64,12 +76,18 @@ export default function App() {
     <div style={{ width: '100%', maxWidth: 1600, margin: '2rem auto', padding: '0 1rem', boxSizing: 'border-box' }}>
       <h1>Our Library</h1>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 16 }}>
-        <button onClick={() => setView('library')}>Library</button>
-        <button onClick={() => setView('checkouts')}>Checkouts</button>
-        {isAdmin && <button onClick={() => setView('import')}>Import</button>}
+        <button onClick={() => go('library')}>Library</button>
+        <button onClick={() => go('recommended')}>Recommended</button>
+        <button onClick={() => go('checkouts')}>Checkouts</button>
+        {isAdmin && <button onClick={() => go('import')}>Import</button>}
         <button onClick={() => supabase.auth.signOut()}>Sign out</button>
       </div>
-      {view === 'library' && <Library userId={session.user.id} isAdmin={isAdmin} />}
+      {view === 'library' && (
+        <Library userId={session.user.id} isAdmin={isAdmin} openBookId={openBookId} />
+      )}
+      {view === 'recommended' && (
+        <Recommended userId={session.user.id} onOpen={openBook} />
+      )}
       {view === 'checkouts' && <Checkouts userId={session.user.id} isAdmin={isAdmin} />}
       {view === 'import' && isAdmin && <Import />}
     </div>

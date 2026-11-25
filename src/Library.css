@@ -202,3 +202,4 @@ html body #root {
   background: #2a2a35;
   flex-shrink: 0;
 }
+.rec-reason { font-size: 12px; margin-top: 3px; opacity: 0.8; font-style: italic; }
