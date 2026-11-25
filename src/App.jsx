@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 import Library from './Library'
 import Import from './Import'
+import Checkouts from './Checkouts'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -64,10 +65,12 @@ export default function App() {
       <h1>Our Library</h1>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 16 }}>
         <button onClick={() => setView('library')}>Library</button>
+        <button onClick={() => setView('checkouts')}>Checkouts</button>
         {isAdmin && <button onClick={() => setView('import')}>Import</button>}
         <button onClick={() => supabase.auth.signOut()}>Sign out</button>
       </div>
-      {view === 'library' && <Library userId={session.user.id} />}
+      {view === 'library' && <Library userId={session.user.id} isAdmin={isAdmin} />}
+      {view === 'checkouts' && <Checkouts userId={session.user.id} isAdmin={isAdmin} />}
       {view === 'import' && isAdmin && <Import />}
     </div>
   )

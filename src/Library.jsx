@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabaseClient'
+import { todayStr, fmtDate, borrowerLabel } from './helpers'
 import './Library.css'
 
 const COLUMNS =
@@ -55,6 +56,23 @@ const fetchListItems = () =>
       .order('list_id')
       .order('book_id')
   )
+
+const CHECKOUT_COLUMNS = 'id,book_id,borrower_id,borrower_name,checked_out_at,due_date'
+
+const fetchActiveCheckouts = () =>
+  fetchPaged(() =>
+    supabase
+      .from('checkouts')
+      .select(CHECKOUT_COLUMNS)
+      .is('returned_at', null)
+      .order('id')
+  )
+
+async function fetchProfiles() {
+  const { data, error } = await supabase.from('profiles').select('id,display_name')
+  if (error) throw error
+  return data
+}
 
 const sortTitle = (t) => (t || '').toLowerCase().replace(/^(the|a|an)\s+/, '')
 const lastName = (a) => (a || '').trim().split(/\s+/).pop().toLowerCase()
@@ -181,6 +199,83 @@ function MyLists({ book, lists, listItems, onToggle, onCreate }) {
   )
 }
 
+function Availability({ book, checkout, userId, isAdmin, profiles, onCheckOut, onReturn }) {
+  const [due, setDue] = useState('')
+  const [who, setWho] = useState(userId)
+  const [guest, setGuest] = useState('')
+
+  if (checkout) {
+    const overdue = checkout.due_date && checkout.due_date < todayStr()
+    return (
+      <div className="my-shelf">
+        <div className="shelf-label">Availability</div>
+        <p style={{ margin: '0 0 8px' }}>
+          Checked out to <strong>{borrowerLabel(checkout, profiles, userId)}</strong> on{' '}
+          {fmtDate(checkout.checked_out_at)}
+          {checkout.due_date && (
+            <span style={{ color: overdue ? 'tomato' : 'inherit' }}>
+              {' '}
+              · due {fmtDate(checkout.due_date)}
+              {overdue ? ' (overdue)' : ''}
+            </span>
+          )}
+        </p>
+        {(checkout.borrower_id === userId || isAdmin) && (
+          <button onClick={() => onReturn(checkout)}>Return book</button>
+        )}
+      </div>
+    )
+  }
+
+  const members = [...profiles.entries()]
+    .filter(([id]) => id !== userId)
+    .sort((a, b) => a[1].localeCompare(b[1]))
+  const canSubmit = who !== 'guest' || guest.trim()
+
+  return (
+    <div className="my-shelf">
+      <div className="shelf-label">Availability</div>
+      <p style={{ margin: '0 0 8px' }}>✓ Available</p>
+      <div className="checkout-form">
+        {isAdmin && (
+          <select value={who} onChange={(e) => setWho(e.target.value)}>
+            <option value={userId}>Check out to me</option>
+            {members.map(([id, name]) => (
+              <option key={id} value={id}>
+                Check out to {name}
+              </option>
+            ))}
+            <option value="guest">Check out to someone without an account…</option>
+          </select>
+        )}
+        {isAdmin && who === 'guest' && (
+          <input
+            placeholder="Their name"
+            value={guest}
+            onChange={(e) => setGuest(e.target.value)}
+          />
+        )}
+        <label className="muted" style={{ fontSize: 13 }}>
+          Due back (optional){' '}
+          <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+        </label>
+        <button
+          disabled={!canSubmit}
+          onClick={() =>
+            onCheckOut(book.id, {
+              dueDate: due,
+              borrowerId: who === 'guest' ? null : isAdmin ? who : userId,
+              borrowerName: who === 'guest' ? guest.trim() : null,
+            })
+          }
+        >
+          Check out
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ManageLists({ lists, listItems, onRename, onDelete, onClose }) {
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose()
@@ -241,6 +336,12 @@ function BookDetails({
   listItems,
   onToggleList,
   onCreateList,
+  checkout,
+  profiles,
+  userId,
+  isAdmin,
+  onCheckOut,
+  onReturn,
   onPickCategory,
   onClose,
 }) {
@@ -277,6 +378,15 @@ function BookDetails({
           <p>
             <Rating book={book} />
           </p>
+          <Availability
+            book={book}
+            checkout={checkout}
+            userId={userId}
+            isAdmin={isAdmin}
+            profiles={profiles}
+            onCheckOut={onCheckOut}
+            onReturn={onReturn}
+          />
           <MyShelf mine={mine} onChange={(changes) => onSave(book.id, changes)} />
           <MyLists
             book={book}
@@ -315,11 +425,13 @@ function BookDetails({
   )
 }
 
-export default function Library({ userId }) {
+export default function Library({ userId, isAdmin }) {
   const [books, setBooks] = useState([])
   const [myBooks, setMyBooks] = useState(new Map())
   const [lists, setLists] = useState([])
   const [listItems, setListItems] = useState(new Map())
+  const [checkouts, setCheckouts] = useState(new Map())
+  const [profiles, setProfiles] = useState(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -328,6 +440,7 @@ export default function Library({ userId }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [ratingMin, setRatingMin] = useState('')
   const [listFilter, setListFilter] = useState('')
+  const [availFilter, setAvailFilter] = useState('all')
   const [sort, setSort] = useState('title')
   const [selected, setSelected] = useState(null)
   const [showManage, setShowManage] = useState(false)
@@ -338,14 +451,18 @@ export default function Library({ userId }) {
       fetchMyBooks(userId),
       fetchLists(userId),
       fetchListItems(),
+      fetchActiveCheckouts(),
+      fetchProfiles(),
     ])
-      .then(([b, mine, ls, items]) => {
+      .then(([b, mine, ls, items, outs, profs]) => {
         setBooks(b)
         setMyBooks(new Map(mine.map((r) => [r.book_id, r])))
         setLists(ls)
         const map = new Map(ls.map((l) => [l.id, new Set()]))
         for (const it of items) map.get(it.list_id)?.add(it.book_id)
         setListItems(map)
+        setCheckouts(new Map(outs.map((c) => [c.book_id, c])))
+        setProfiles(new Map(profs.map((p) => [p.id, p.display_name])))
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
@@ -454,6 +571,47 @@ export default function Library({ userId }) {
     if (listFilter === id) setListFilter('')
   }
 
+  async function checkOut(bookId, { dueDate, borrowerId, borrowerName }) {
+    setNotice('')
+    const { data, error } = await supabase
+      .from('checkouts')
+      .insert({
+        book_id: bookId,
+        borrower_id: borrowerId || null,
+        borrower_name: borrowerName || null,
+        due_date: dueDate || null,
+      })
+      .select(CHECKOUT_COLUMNS)
+      .single()
+    if (error) {
+      setNotice(
+        error.code === '23505'
+          ? 'Someone just checked that book out. Refresh to see who has it.'
+          : `Couldn't check that book out: ${error.message}`
+      )
+      return
+    }
+    setCheckouts((m) => new Map(m).set(bookId, data))
+  }
+
+  async function returnBook(checkout) {
+    setNotice('')
+    const { data, error } = await supabase
+      .from('checkouts')
+      .update({ returned_at: new Date().toISOString() })
+      .eq('id', checkout.id)
+      .select('id')
+    if (error || !data?.length) {
+      setNotice(`Couldn't return that book${error ? ': ' + error.message : ''}`)
+      return
+    }
+    setCheckouts((m) => {
+      const copy = new Map(m)
+      copy.delete(checkout.book_id)
+      return copy
+    })
+  }
+
   const categoryCounts = useMemo(() => {
     const counts = new Map()
     for (const b of books)
@@ -482,6 +640,12 @@ export default function Library({ userId }) {
         if (s !== statusFilter) return false
       }
       if (listFilter && !inList?.has(b.id)) return false
+      if (availFilter !== 'all') {
+        const c = checkouts.get(b.id)
+        if (availFilter === 'available' && c) return false
+        if (availFilter === 'out' && !c) return false
+        if (availFilter === 'mine' && c?.borrower_id !== userId) return false
+      }
       return true
     })
     const sorters = {
@@ -493,9 +657,28 @@ export default function Library({ userId }) {
       popularity: (a, b) => (b.rating_count || 0) - (a.rating_count || 0),
     }
     return [...list].sort(sorters[sort])
-  }, [books, myBooks, listItems, query, category, statusFilter, ratingMin, listFilter, sort])
+  }, [
+    books,
+    myBooks,
+    listItems,
+    checkouts,
+    userId,
+    query,
+    category,
+    statusFilter,
+    ratingMin,
+    listFilter,
+    availFilter,
+    sort,
+  ])
 
-  const hasFilters = query || category || statusFilter !== 'all' || ratingMin || listFilter
+  const hasFilters =
+    query ||
+    category ||
+    statusFilter !== 'all' ||
+    ratingMin ||
+    listFilter ||
+    availFilter !== 'all'
 
   function clearFilters() {
     setQuery('')
@@ -503,6 +686,7 @@ export default function Library({ userId }) {
     setStatusFilter('all')
     setRatingMin('')
     setListFilter('')
+    setAvailFilter('all')
   }
 
   if (loading) return <p>Loading your library...</p>
@@ -535,6 +719,12 @@ export default function Library({ userId }) {
               {label}
             </option>
           ))}
+        </select>
+        <select value={availFilter} onChange={(e) => setAvailFilter(e.target.value)}>
+          <option value="all">Any availability</option>
+          <option value="available">Available</option>
+          <option value="out">Checked out</option>
+          <option value="mine">Checked out to me</option>
         </select>
         <select value={listFilter} onChange={(e) => setListFilter(e.target.value)}>
           <option value="">Any list</option>
@@ -573,6 +763,7 @@ export default function Library({ userId }) {
       <div className="book-grid">
         {shown.map((b) => {
           const status = myBooks.get(b.id)?.status
+          const out = checkouts.get(b.id)
           return (
             <button key={b.id} className="book-card" onClick={() => setSelected(b)}>
               <div className="cover-wrap">
@@ -580,6 +771,11 @@ export default function Library({ userId }) {
                 {status === 'read' && <span className="badge badge-read">✓ Read</span>}
                 {status === 'reading' && (
                   <span className="badge badge-reading">Reading</span>
+                )}
+                {out && (
+                  <span className="badge badge-out">
+                    {out.borrower_id === userId ? 'With me' : 'Checked out'}
+                  </span>
                 )}
               </div>
               <div className="book-title">{b.title}</div>
@@ -597,6 +793,12 @@ export default function Library({ userId }) {
           listItems={listItems}
           onToggleList={toggleInList}
           onCreateList={createList}
+          checkout={checkouts.get(selected.id)}
+          profiles={profiles}
+          userId={userId}
+          isAdmin={isAdmin}
+          onCheckOut={checkOut}
+          onReturn={returnBook}
           onPickCategory={(c) => {
             setCategory(c)
             setSelected(null)

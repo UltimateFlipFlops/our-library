@@ -179,3 +179,26 @@ html body #root {
 }
 .list-row .grow { flex: 1; }
 .list-row button { cursor: pointer; }
+.badge-out { left: 6px; right: auto; background: #1565c0; }
+
+.checkout-form { display: grid; gap: 8px; justify-items: start; }
+.checkout-form select,
+.checkout-form input { padding: 6px 8px; max-width: 100%; }
+.checkout-form button { cursor: pointer; }
+
+.checkout-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.checkout-row .grow { flex: 1; min-width: 0; }
+.checkout-thumb {
+  width: 46px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 3px;
+  background: #2a2a35;
+  flex-shrink: 0;
+}
