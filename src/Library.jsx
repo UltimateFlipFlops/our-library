@@ -11,16 +11,11 @@ const STATUSES = [
   ['read', 'Read'],
 ]
 
-async function fetchAllBooks() {
+async function fetchPaged(buildQuery) {
   const pageSize = 1000
   let all = []
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from('books')
-      .select(COLUMNS)
-      .order('title')
-      .order('id')
-      .range(from, from + pageSize - 1)
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1)
     if (error) throw error
     all = all.concat(data)
     if (data.length < pageSize) break
@@ -28,22 +23,38 @@ async function fetchAllBooks() {
   return all
 }
 
-async function fetchMyBooks(userId) {
-  const pageSize = 1000
-  let all = []
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+const fetchAllBooks = () =>
+  fetchPaged(() =>
+    supabase.from('books').select(COLUMNS).order('title').order('id')
+  )
+
+const fetchMyBooks = (userId) =>
+  fetchPaged(() =>
+    supabase
       .from('user_books')
       .select('book_id,status,my_rating')
       .eq('user_id', userId)
       .order('book_id')
-      .range(from, from + pageSize - 1)
-    if (error) throw error
-    all = all.concat(data)
-    if (data.length < pageSize) break
-  }
-  return all
+  )
+
+async function fetchLists(userId) {
+  const { data, error } = await supabase
+    .from('lists')
+    .select('id,name')
+    .eq('user_id', userId)
+    .order('created_at')
+  if (error) throw error
+  return data
 }
+
+const fetchListItems = () =>
+  fetchPaged(() =>
+    supabase
+      .from('list_items')
+      .select('list_id,book_id')
+      .order('list_id')
+      .order('book_id')
+  )
 
 const sortTitle = (t) => (t || '').toLowerCase().replace(/^(the|a|an)\s+/, '')
 const lastName = (a) => (a || '').trim().split(/\s+/).pop().toLowerCase()
@@ -126,7 +137,113 @@ function MyShelf({ mine, onChange }) {
   )
 }
 
-function BookDetails({ book, mine, onSave, onPickCategory, onClose }) {
+function MyLists({ book, lists, listItems, onToggle, onCreate }) {
+  const [name, setName] = useState('')
+  return (
+    <div className="my-shelf">
+      <div className="shelf-label">My lists</div>
+      {lists.length > 0 && (
+        <div className="chips">
+          {lists.map((l) => {
+            const inList = listItems.get(l.id)?.has(book.id)
+            return (
+              <button
+                key={l.id}
+                className={`chip chip-button ${inList ? 'chip-on' : ''}`}
+                onClick={() => onToggle(l.id, book.id, !inList)}
+              >
+                {inList ? '✓ ' : '+ '}
+                {l.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      <form
+        className="new-list"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!name.trim()) return
+          onCreate(name, book.id)
+          setName('')
+        }}
+      >
+        <input
+          placeholder={lists.length ? 'New list name' : 'Make your first list, e.g. To Be Read'}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button type="submit" disabled={!name.trim()}>
+          Create and add
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function ManageLists({ lists, listItems, onRename, onDelete, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-narrow" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+        <h2 style={{ margin: 0 }}>Manage my lists</h2>
+        {lists.length === 0 && (
+          <p className="muted">
+            You don't have any lists yet. Open a book and create one from its popup.
+          </p>
+        )}
+        {lists.map((l) => (
+          <div key={l.id} className="list-row">
+            <span className="grow">
+              {l.name}{' '}
+              <span className="muted">({listItems.get(l.id)?.size || 0} books)</span>
+            </span>
+            <button
+              onClick={() => {
+                const name = window.prompt('Rename list', l.name)
+                if (name && name.trim()) onRename(l.id, name)
+              }}
+            >
+              Rename
+            </button>
+            <button
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Delete the list "${l.name}"? The books themselves are not deleted.`
+                  )
+                )
+                  onDelete(l.id)
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function BookDetails({
+  book,
+  mine,
+  onSave,
+  lists,
+  listItems,
+  onToggleList,
+  onCreateList,
+  onPickCategory,
+  onClose,
+}) {
   const [extra, setExtra] = useState(null)
 
   useEffect(() => {
@@ -161,6 +278,13 @@ function BookDetails({ book, mine, onSave, onPickCategory, onClose }) {
             <Rating book={book} />
           </p>
           <MyShelf mine={mine} onChange={(changes) => onSave(book.id, changes)} />
+          <MyLists
+            book={book}
+            lists={lists}
+            listItems={listItems}
+            onToggle={onToggleList}
+            onCreate={onCreateList}
+          />
           {book.categories?.length > 0 && (
             <div className="chips">
               {book.categories.map((c) => (
@@ -194,6 +318,8 @@ function BookDetails({ book, mine, onSave, onPickCategory, onClose }) {
 export default function Library({ userId }) {
   const [books, setBooks] = useState([])
   const [myBooks, setMyBooks] = useState(new Map())
+  const [lists, setLists] = useState([])
+  const [listItems, setListItems] = useState(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -201,14 +327,25 @@ export default function Library({ userId }) {
   const [category, setCategory] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [ratingMin, setRatingMin] = useState('')
+  const [listFilter, setListFilter] = useState('')
   const [sort, setSort] = useState('title')
   const [selected, setSelected] = useState(null)
+  const [showManage, setShowManage] = useState(false)
 
   useEffect(() => {
-    Promise.all([fetchAllBooks(), fetchMyBooks(userId)])
-      .then(([b, mine]) => {
+    Promise.all([
+      fetchAllBooks(),
+      fetchMyBooks(userId),
+      fetchLists(userId),
+      fetchListItems(),
+    ])
+      .then(([b, mine, ls, items]) => {
         setBooks(b)
         setMyBooks(new Map(mine.map((r) => [r.book_id, r])))
+        setLists(ls)
+        const map = new Map(ls.map((l) => [l.id, new Set()]))
+        for (const it of items) map.get(it.list_id)?.add(it.book_id)
+        setListItems(map)
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
@@ -248,6 +385,75 @@ export default function Library({ userId }) {
     }
   }
 
+  async function toggleInList(listId, bookId, add) {
+    setNotice('')
+    const apply = (adding) =>
+      setListItems((m) => {
+        const copy = new Map(m)
+        const set = new Set(copy.get(listId) || [])
+        if (adding) set.add(bookId)
+        else set.delete(bookId)
+        copy.set(listId, set)
+        return copy
+      })
+    apply(add)
+    const { error } = add
+      ? await supabase.from('list_items').insert({ list_id: listId, book_id: bookId })
+      : await supabase
+          .from('list_items')
+          .delete()
+          .eq('list_id', listId)
+          .eq('book_id', bookId)
+    // 23505 means it was already in the list, which is fine
+    if (error && error.code !== '23505') {
+      apply(!add)
+      setNotice(`Couldn't update that list: ${error.message}`)
+    }
+  }
+
+  async function createList(name, firstBookId) {
+    const clean = name.trim()
+    if (!clean) return
+    setNotice('')
+    const { data, error } = await supabase
+      .from('lists')
+      .insert({ user_id: userId, name: clean })
+      .select('id,name')
+      .single()
+    if (error) {
+      setNotice(`Couldn't create the list: ${error.message}`)
+      return
+    }
+    setLists((l) => [...l, data])
+    setListItems((m) => new Map(m).set(data.id, new Set()))
+    if (firstBookId) await toggleInList(data.id, firstBookId, true)
+  }
+
+  async function renameList(id, name) {
+    const clean = name.trim()
+    if (!clean) return
+    setNotice('')
+    const { error } = await supabase.from('lists').update({ name: clean }).eq('id', id)
+    if (error) setNotice(`Couldn't rename the list: ${error.message}`)
+    else setLists((l) => l.map((x) => (x.id === id ? { ...x, name: clean } : x)))
+  }
+
+  async function deleteList(id) {
+    setNotice('')
+    const { error } = await supabase.from('lists').delete().eq('id', id)
+    if (error) {
+      setNotice(`Couldn't delete the list: ${error.message}`)
+      return
+    }
+    setLists((l) => l.filter((x) => x.id !== id))
+    setListItems((m) => {
+      const copy = new Map(m)
+      copy.delete(id)
+      return copy
+    })
+    if (listFilter === id) setListFilter('')
+  }
+
   const categoryCounts = useMemo(() => {
     const counts = new Map()
     for (const b of books)
@@ -260,6 +466,7 @@ export default function Library({ userId }) {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
     const minRating = Number(ratingMin) || 0
+    const inList = listFilter ? listItems.get(listFilter) : null
     const list = books.filter((b) => {
       if (
         q &&
@@ -274,6 +481,7 @@ export default function Library({ userId }) {
         const s = myBooks.get(b.id)?.status || 'unread'
         if (s !== statusFilter) return false
       }
+      if (listFilter && !inList?.has(b.id)) return false
       return true
     })
     const sorters = {
@@ -285,15 +493,16 @@ export default function Library({ userId }) {
       popularity: (a, b) => (b.rating_count || 0) - (a.rating_count || 0),
     }
     return [...list].sort(sorters[sort])
-  }, [books, myBooks, query, category, statusFilter, ratingMin, sort])
+  }, [books, myBooks, listItems, query, category, statusFilter, ratingMin, listFilter, sort])
 
-  const hasFilters = query || category || statusFilter !== 'all' || ratingMin
+  const hasFilters = query || category || statusFilter !== 'all' || ratingMin || listFilter
 
   function clearFilters() {
     setQuery('')
     setCategory('')
     setStatusFilter('all')
     setRatingMin('')
+    setListFilter('')
   }
 
   if (loading) return <p>Loading your library...</p>
@@ -327,6 +536,14 @@ export default function Library({ userId }) {
             </option>
           ))}
         </select>
+        <select value={listFilter} onChange={(e) => setListFilter(e.target.value)}>
+          <option value="">Any list</option>
+          {lists.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name} ({listItems.get(l.id)?.size || 0})
+            </option>
+          ))}
+        </select>
         <select value={ratingMin} onChange={(e) => setRatingMin(e.target.value)}>
           <option value="">Any rating</option>
           <option value="3">3.0+ stars</option>
@@ -340,6 +557,9 @@ export default function Library({ userId }) {
           <option value="rating">Sort: Rating</option>
           <option value="popularity">Sort: Popularity</option>
         </select>
+        <button className="clear-filters" onClick={() => setShowManage(true)}>
+          Manage lists
+        </button>
         {hasFilters && (
           <button className="clear-filters" onClick={clearFilters}>
             Clear filters
@@ -373,11 +593,24 @@ export default function Library({ userId }) {
           book={selected}
           mine={myBooks.get(selected.id)}
           onSave={saveMine}
+          lists={lists}
+          listItems={listItems}
+          onToggleList={toggleInList}
+          onCreateList={createList}
           onPickCategory={(c) => {
             setCategory(c)
             setSelected(null)
           }}
           onClose={() => setSelected(null)}
+        />
+      )}
+      {showManage && (
+        <ManageLists
+          lists={lists}
+          listItems={listItems}
+          onRename={renameList}
+          onDelete={deleteList}
+          onClose={() => setShowManage(false)}
         />
       )}
     </div>
